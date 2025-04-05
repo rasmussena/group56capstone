@@ -36,7 +36,7 @@ export default function TextbookList() {
             author: "John Smith",
             uploadDate: new Date(2023, 5, 15),
             pages: 342,
-            thumbnail: "/placeholder.svg?height=100&width=80",
+            thumbnail: "/physics.jpeg?height=100&width=80",
           },
           {
             id: "2",

@@ -4,11 +4,11 @@ import { NextResponse } from "next/server"
 const textbooks = [
   {
     id: "1",
-    title: "Introduction to Computer Science",
-    author: "John Smith",
+    title: "Physics",
+    author: "PAUL PETER URONE, ROGER HINRICHS",
     uploadDate: new Date(2023, 5, 15),
-    pages: 342,
-    thumbnail: "/placeholder.svg?height=100&width=80",
+    pages: 850,
+    thumbnail: "/physics.jpeg?height=100&width=80",
   },
   {
     id: "2",
