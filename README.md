@@ -10,7 +10,7 @@ Here's a step-by-step guide to get both the frontend and backend running:
 1. **Install dependencies**:
 
 ```shellscript
-npm install
+npm install --legacy-peer-deps
 ```
 
 
