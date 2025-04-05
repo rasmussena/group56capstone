@@ -4,8 +4,11 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 import jwt
-from ..models.user import User, UserCreate, UserInDB
-from ..config import settings
+from backend.models.user import User, UserCreate, UserInDB
+from backend.config import settings
+from backend.redis_client import redis_client
+
+import hashlib
 
 router = APIRouter()
 
@@ -18,10 +21,46 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 # Helper functions
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+async def hash_password(password: str) -> str:
     """
-    Creates a JWT token with the given data and expiration.
+    Hashes the password using SHA-256.
     """
+    return hashlib.sha256(password.encode()).hexdigest()
+
+async def store_user_in_redis(user: UserInDB):
+    """
+    Stores user information in Redis.
+    """
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid user data")
+
+    user_key = f"user:{user.id}"
+    user_data = user.model_dump()
+    print("USSSSSSSEEEEEERRRRR DDDAAAATTTTTAAAA", user_data)
+    await redis_client.hset(user_key, mapping=user_data)
+    return True
+
+async def get_user_by_id(user_id: str) -> Optional[User]:
+    """
+    Retrieves the user from Redis by ID.
+    """
+    user_key = f"user:{user_id}"
+    user_data = await redis_client.hgetall(user_key)
+    
+    if not user_data:
+        return None
+    
+    user = UserInDB(
+        id=user_data.get("id"),
+        username=user_data.get("username"),
+        email=user_data.get("email"),
+        disabled=user_data.get("disabled") == 1,
+        hashed_password=user_data.get("hashed_password"),
+    )
+    
+    return user
+
+async def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -34,48 +73,36 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """
-    Authenticates user and returns JWT token.
+    Logs in a user and returns an access token.
     """
-    # TODO: Implement your authentication logic
-    # 1. Verify username and password against your database
-    # 2. If valid, create and return a JWT token
-    # 3. If invalid, raise HTTPException with 401 status code
+    user = await get_user_by_id(form_data.username)
     
-    # Example structure:
-    # user = authenticate_user(form_data.username, form_data.password)
-    # if not user:
-    #     raise HTTPException(status_code=401, detail="Invalid credentials")
-    # 
-    # access_token = create_access_token(data={"sub": user.username})
-    # return {"access_token": access_token, "token_type": "bearer"}
+    if not user or not user.hashed_password == await hash_password(form_data.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
-    raise HTTPException(status_code=501, detail="Not implemented")
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = await create_access_token(
+        data={"sub": user.id}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register_user(user: UserCreate):
+async def register_user(user_create: UserCreate):
     """
-    Registers a new user.
+    Registers a new user
     """
-    # TODO: Implement your user registration logic
-    # 1. Check if username or email already exists
-    # 2. Hash the password
-    # 3. Create the user in your database
-    # 4. Return success or appropriate error
-    
-    # Example structure:
-    # if username_exists(user.username) or email_exists(user.email):
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="Username or email already registered"
-    #     )
-    # 
-    # hashed_password = get_password_hash(user.password)
-    # user_data = user.dict()
-    # user_data["hashed_password"] = hashed_password
-    # del user_data["password"]
-    # 
-    # new_user = create_user_in_db(user_data)
-    # return {"message": "User created successfully"}
-    
-    raise HTTPException(status_code=501, detail="Not implemented")
-
+    hashed_password = await hash_password(user_create.password)
+    user = UserInDB(
+        id=user_create.username,
+        username=user_create.username,
+        email=user_create.email,
+        hashed_password=hashed_password,
+        disabled=0,
+    )
+    await store_user_in_redis(user)
+    return {"message": "User registered successfully", "user": user}

@@ -3,11 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 import jwt
+import json
+
+from backend.redis_client import redis_client
+
+from backend.routes.auth import get_user_by_id
+from backend.routes.auth import router as auth_router
+
+
 
 # Create FastAPI app
 app = FastAPI(title="TextbookAI API")
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 # Add CORS middleware
 app.add_middleware(
@@ -30,6 +39,9 @@ class User(BaseModel):
     email: str  # Changed from EmailStr to str
     full_name: Optional[str] = None
     disabled: Optional[bool] = None
+
+class UserCreate(User):
+    password: str
 
 class UserInDB(User):
     hashed_password: str
@@ -61,10 +73,42 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         return None
         
     try:
-        # TODO: Implement your JWT decoding logic
-        return None
-    except Exception:
-        return None
+        # Decode the token (verify its signature and expiration)
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")  # 'sub' is the typical key for user ID in JWT
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token is missing user information",
+            )
+
+        # Optionally, you could verify token expiration here:
+        expiration = payload.get("exp")
+        if expiration and datetime.fromtimestamp(expiration, timezone.utc) < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+            )
+
+        # Assuming you have a function to get the user from your DB
+        user = await get_user_by_id(user_id)  # Replace with your DB fetching logic
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        return user
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
 
 async def get_current_active_user(current_user: Optional[User] = Depends(get_current_user)):
     """
@@ -79,21 +123,6 @@ async def get_current_active_user(current_user: Optional[User] = Depends(get_cur
     return current_user
 
 # Routes
-@app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    """
-    Authenticates user and returns JWT token.
-    """
-    # TODO: Implement your authentication logic
-    raise HTTPException(status_code=501, detail="Not implemented")
-
-@app.post("/register", status_code=status.HTTP_201_CREATED)
-async def register_user(user_data: dict):
-    """
-    Registers a new user.
-    """
-    # TODO: Implement your user registration logic
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 @app.get("/users/me", response_model=User)
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
@@ -119,7 +148,24 @@ async def chat_with_textbooks(message: ChatMessage, current_user: Optional[User]
     response_text = f"You asked: {message.message}\nThis is a response from the backend."
     saved = current_user is not None
     
+    if saved:
+        redis_key = f"chat_history:{current_user.id}"
+        user_entry = {
+            "role": "user",
+            "content": message.message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        assistant_entry = {
+            "role": "assistant",
+            "content": response_text,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        await redis_client.rpush(redis_key, json.dumps(user_entry))
+        await redis_client.rpush(redis_key, json.dumps(assistant_entry))
+        
     return {"response": response_text, "saved": saved}
+
 
 @app.get("/chat/history")
 async def get_chat_history(current_user: User = Depends(get_current_active_user)):
@@ -134,8 +180,19 @@ async def get_chat_history(current_user: User = Depends(get_current_active_user)
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # TODO: Implement your chat history retrieval logic
-    return []
+    redis_key = f"chat_history:{current_user.id}"
+
+    try:
+        raw_messages = await redis_client.lrange(redis_key, 0, -1)
+        chat_history = [json.loads(msg) for msg in raw_messages]
+        return chat_history
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving chat history: {str(e)}",
+        )
+
+
 
 # Run the application
 if __name__ == "__main__":
