@@ -64,8 +64,21 @@ export default function TextbookUpload() {
       //   body: formData,
       // });
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("title", title)
+      formData.append("author", author)
+
+      const response = await fetch("/api/textbooks/upload", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error("Upload failed")
+
+      const data = await response.json()
+      console.log("Upload success:", data)
+
 
       setUploadSuccess(true)
       setTimeout(() => {
