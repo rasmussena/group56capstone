@@ -1,0 +1,11 @@
+fastapi>=0.95.0
+uvicorn>=0.22.0
+pydantic>=1.10.7
+python-jose[cryptography]>=3.3.0  # For JWT handling
+passlib[bcrypt]>=1.7.4  # For password hashing
+python-multipart>=0.0.6  # For form data and file uploads
+sqlalchemy>=2.0.0  # If you're using SQL databases
+pymongo>=4.3.3  # If you're using MongoDB
+motor>=3.1.1  # Async MongoDB driver
+python-dotenv>=1.0.0  # For environment variables
+
