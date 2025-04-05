@@ -26,6 +26,7 @@ This will start the Next.js server, typically on [http://localhost:3000](http://
 
 
 ## Backend (FastAPI) Setup
+In a new terminal
 
 1. **Create a virtual environment** (recommended):
 
