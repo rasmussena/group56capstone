@@ -6,13 +6,12 @@ from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import DocumentCompressorPipeline, LLMChainFilter
 from langchain_core.documents import Document
-from langchain.tools.retriever import create_retriever_tool
 from langchain_chroma import Chroma
 import chromadb
 
 from PyPDF2 import PdfReader, PdfWriter
 
-import bookmark
+import backend.bookmark as bookmark
 
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -77,7 +76,7 @@ def create_retriever(textbook_path, textbook_name):
         for i in range(1, bookmarks["chapter_num"]+1):
             start_page = bookmarks[f"chapter {i}"]["page_num"]
             end_page = bookmarks[f"chapter {i}"]["last_page"]
-            page_ranges.append((start_page, end_page))
+            page_ranges.append((start_page - 1, end_page))
 
         reader = PdfReader(textbook_path)
 
@@ -139,16 +138,4 @@ def create_retriever(textbook_path, textbook_name):
     print("Retriever initialized")
 
     return retriever
-
-def create_retriever_tool(textbook_path, textbook_name):
-    """
-    This tool generates relevant documents from an OpenStax Textbook
-    """
-    retriever = create_retriever(textbook_path, textbook_name)
-
-    retriever_tool = create_retriever_tool(
-        retriever,
-        "retrieve_textbook_content",
-        "Search and return information from textbook."
-    )
-    return retriever_tool
+    
