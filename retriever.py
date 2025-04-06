@@ -30,27 +30,29 @@ if not api_key:
 
 os.environ["OPENAI_API_KEY"] = api_key
 
-def create_retriever(textbook_path, bookmark_path, collection_name):
+def create_retriever(textbook_path, textbook_name):
     """
     Creates a retriever given an OpenStax textbook pdf
 
     Args:
         textbook_path (str): Path to the OpenStax textbook pdf
-        bookmark_path (str): Path to the bookmarks.json file
-        collection_name (str): Name of the Chroma collection
+        textbook_name (str): Name of the OpenStax textbook
 
     Returns:
         ContextualCompressionRetriever
     """
 
+    if not os.path.exists(textbook_path):
+        raise Exception("Textbook path does not exist")
+
     # Initialize a persistent Chroma vector database
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
     persistent_client = chromadb.PersistentClient()
-    collection = persistent_client.get_or_create_collection(name=collection_name)
+    collection = persistent_client.get_or_create_collection(name=textbook_name)
 
     vector_store = Chroma(
         client=persistent_client,
-        collection_name=collection_name,
+        collection_name=textbook_name,
         embedding_function=embeddings
     )
     print("Chroma vector database initialized")
@@ -59,6 +61,8 @@ def create_retriever(textbook_path, bookmark_path, collection_name):
         print("Chroma vector database is empty, loading documents...")
 
         # Initialize bookmarks
+        bookmark_str = textbook_name + ".json"
+        bookmark_path = os.path.join("./data", bookmark_str)
         if not os.path.exists(bookmark_path):
             bookmark.initialize_bookmarks(textbook_path, bookmark_path)
         with open(bookmark_path, "r") as f:
@@ -87,6 +91,7 @@ def create_retriever(textbook_path, bookmark_path, collection_name):
             with open(output_pdf, "wb") as f:
                 writer.write(f)
 
+        # Load documents
         for i in tqdm(range(1, bookmarks["chapter_num"]+1), desc="Loading documents"):
             file_path = f"./data/chapter{i}.pdf"
             loader = PyPDFLoader(file_path)
@@ -101,11 +106,17 @@ def create_retriever(textbook_path, bookmark_path, collection_name):
                 )
         print("Documents loaded")
 
+        # Remove redundant chapter PDFs
         for i in range(1, bookmarks["chapter_num"]+1):
             file_path = f"./data/chapter{i}.pdf"
             if os.path.exists(file_path):
                 os.remove(file_path)
         print("Removed chapter PDFs")
+
+        # Remove bookmarks file
+        if os.path.exists(bookmark_path):
+            os.remove(bookmark_path)
+        print("Removed bookmarks file")
 
         # Add documents to vector database
         for doc in tqdm(documents, desc="Adding documents to vector database"):
@@ -121,7 +132,8 @@ def create_retriever(textbook_path, bookmark_path, collection_name):
     )
     retriever = ContextualCompressionRetriever(
         base_compressor=pipeline_compressor, 
-        base_retriever=vector_store.as_retriever()
+        base_retriever=vector_store.as_retriever(),
+        max_documents=6,
     )
     print("Retriever initialized")
 
