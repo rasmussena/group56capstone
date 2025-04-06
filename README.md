@@ -70,13 +70,13 @@ cd backend
 ```shellscript
 pip install -r requirements.txt
 ```
-
+3.2 **Return to main directory**
 
 4. **Start the FastAPI server**:
 
 ```shellscript
 # If you're using the modular structure I provided
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 # If you're using a simpler structure
 python main.py
