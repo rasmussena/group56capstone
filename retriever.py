@@ -1,13 +1,10 @@
 import os
 import json
-from uuid import uuid4
 
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.tools.retriever import create_retriever_tool
+from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
+from langchain.retrievers.document_compressors import DocumentCompressorPipeline, LLMChainFilter
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 import chromadb
@@ -33,87 +30,100 @@ if not api_key:
 
 os.environ["OPENAI_API_KEY"] = api_key
 
-# Initialize a persistent Chroma vector database
-collection_name = "test_collection"
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-persistent_client = chromadb.PersistentClient()
-collection = persistent_client.get_or_create_collection(name=collection_name)
+def create_retriever(textbook_path, bookmark_path, collection_name):
+    """
+    Creates a retriever given an OpenStax textbook pdf
 
-vector_store = Chroma(
-    client=persistent_client,
-    collection_name=collection_name,
-    embedding_function=embeddings
-)
-print("Chroma vector database initialized")
+    Args:
+        textbook_path (str): Path to the OpenStax textbook pdf
+        bookmark_path (str): Path to the bookmarks.json file
+        collection_name (str): Name of the Chroma collection
 
-# Initialize bookmarks
-textbook_path = "./data/PhysicsText.pdf"
-bookmark_path = "./data/bookmarks.json"
-if not os.path.exists(bookmark_path):
-    bookmark.initialize_bookmarks(textbook_path, bookmark_path)
-with open(bookmark_path, "r") as f:
-    bookmarks = json.load(f)
-print("Bookmarks loaded")
+    Returns:
+        ContextualCompressionRetriever
+    """
 
-# Create/load documents
-document_path = "./data/documents.json"
-documents = []
+    # Initialize a persistent Chroma vector database
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+    persistent_client = chromadb.PersistentClient()
+    collection = persistent_client.get_or_create_collection(name=collection_name)
 
-if not os.path.exists(document_path):
-    page_ranges = []
-    for i in range(1, bookmarks["chapter_num"]+1):
-        start_page = bookmarks[f"chapter {i}"]["page_num"]
-        end_page = bookmarks[f"chapter {i}"]["last_page"]
-        page_ranges.append((start_page, end_page))
+    vector_store = Chroma(
+        client=persistent_client,
+        collection_name=collection_name,
+        embedding_function=embeddings
+    )
+    print("Chroma vector database initialized")
 
-    reader = PdfReader(textbook_path)
+    if collection.count() == 0:
+        print("Chroma vector database is empty, loading documents...")
 
-    for idx, (start_page, end_page) in enumerate(page_ranges):
-        writer = PdfWriter()
+        # Initialize bookmarks
+        if not os.path.exists(bookmark_path):
+            bookmark.initialize_bookmarks(textbook_path, bookmark_path)
+        with open(bookmark_path, "r") as f:
+            bookmarks = json.load(f)
+        print("Bookmarks loaded")
 
-        for page_num in range(start_page, end_page):
-            writer.add_page(reader.pages[page_num])
+        # Create documents
+        documents = []
 
-        output_pdf = os.path.join("./data", f"chapter{idx+1}.pdf")
+        page_ranges = []
+        for i in range(1, bookmarks["chapter_num"]+1):
+            start_page = bookmarks[f"chapter {i}"]["page_num"]
+            end_page = bookmarks[f"chapter {i}"]["last_page"]
+            page_ranges.append((start_page, end_page))
 
-        with open(output_pdf, "wb") as f:
-            writer.write(f)
+        reader = PdfReader(textbook_path)
 
-    for i in tqdm(range(1, bookmarks["chapter_num"]+1), desc="Loading documents"):
-        file_path = f"./data/chapter{i}.pdf"
-        loader = PyPDFLoader(file_path)
-        full_chapter = loader.load()
+        for idx, (start_page, end_page) in enumerate(page_ranges):
+            writer = PdfWriter()
 
-        for page_num, document in enumerate(full_chapter, start=1):
-            documents.append(
-                Document(
-                    page_content=document.page_content, 
-                    metadata={"chapter": f"Chapter {i}", "page": page_num}
+            for page_num in range(start_page, end_page):
+                writer.add_page(reader.pages[page_num])
+
+            output_pdf = os.path.join("./data", f"chapter{idx+1}.pdf")
+
+            with open(output_pdf, "wb") as f:
+                writer.write(f)
+
+        for i in tqdm(range(1, bookmarks["chapter_num"]+1), desc="Loading documents"):
+            file_path = f"./data/chapter{i}.pdf"
+            loader = PyPDFLoader(file_path)
+            full_chapter = loader.load()
+
+            for page_num, document in enumerate(full_chapter, start=1):
+                documents.append(
+                    Document(
+                        page_content=document.page_content, 
+                        metadata={"chapter": f"Chapter {i}", "page": page_num}
+                    )
                 )
-            )
-    print("Documents loaded")
+        print("Documents loaded")
 
-    with open(document_path, "w", encoding="utf-8") as f:
-        json_docs = [
-            {
-                "page_content": doc.page_content,
-                "metadata": doc.metadata
-            }
-            for doc in documents
-        ]
-        json.dump(json_docs, f, ensure_ascii=False, indent=4)
-    print("Documents saved")
+        for i in range(1, bookmarks["chapter_num"]+1):
+            file_path = f"./data/chapter{i}.pdf"
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        print("Removed chapter PDFs")
 
-    for i in range(1, bookmarks["chapter_num"]+1):
-        file_path = f"./data/chapter{i}.pdf"
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    print("Removed chapter PDFs")
-else:
-    with open(document_path, "r", encoding="utf-8") as f:
-        json_docs = json.load(f)
-        documents = [
-            Document(page_content=doc["page_content"], metadata=doc["metadata"])
-            for doc in json_docs
-        ]
+        # Add documents to vector database
+        for doc in tqdm(documents, desc="Adding documents to vector database"):
+            vector_store.add_documents([doc])
+
+    else:
+        print("Chroma vector database is not empty, skipping document loading")
+
+    llm = OpenAI(temperature=0)
+    filter = LLMChainFilter.from_llm(llm)
+    pipeline_compressor = DocumentCompressorPipeline(
+        transformers=[filter]
+    )
+    retriever = ContextualCompressionRetriever(
+        base_compressor=pipeline_compressor, 
+        base_retriever=vector_store.as_retriever()
+    )
+    print("Retriever initialized")
+
+    return retriever
     
