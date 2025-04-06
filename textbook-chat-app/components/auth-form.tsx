@@ -37,29 +37,25 @@ export default function AuthForm() {
     setIsLoading(true)
 
     try {
-      // For the preview/demo, we'll simulate a successful login
-      // In a real app, you would authenticate against your backend
-      // const response = await fetch("http://localhost:8000/token", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/x-www-form-urlencoded",
-      //   },
-      //   body: new URLSearchParams({
-      //     username: loginData.username,
-      //     password: loginData.password,
-      //   }),
-      // });
+      const response = await fetch("http://localhost:8000/auth/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          username: loginData.username,
+          password: loginData.password,
+        }),
+      });
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      if (!response.ok) {
+        throw new Error("Login failed")
+      }
 
-      // Simulate successful login for demo purposes
-      // This allows testing the UI flow without the backend
-      const mockToken =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqb2huZG9lIiwiZXhwIjoxNjkzNTg3OTk5fQ.mock-token-for-demo"
+      const data = await response.json()
+      const { access_token } = data
 
-      // Store the token in localStorage
-      localStorage.setItem("access_token", mockToken)
+      localStorage.setItem("access_token", access_token)
 
       toast({
         title: "Login Successful",
@@ -95,25 +91,23 @@ export default function AuthForm() {
     setIsLoading(true)
 
     try {
-      // For the preview/demo, we'll simulate a successful registration
-      // In a real app, you would have a registration endpoint
-      // const response = await fetch("http://localhost:8000/register", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //   },
-      //   body: JSON.stringify({
-      //     username: registerData.username,
-      //     email: registerData.email,
-      //     password: registerData.password,
-      //   }),
-      // });
+      const response = await fetch("http://localhost:8000/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: registerData.username,
+          email: registerData.email,
+          password: registerData.password,
+        }),
+      });
 
-      // If the backend is not available, simulate success for demo purposes
-      // This allows testing the UI flow without the backend
+      if (!response.ok) {
+        throw new Error("Registration failed")
+      }
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const data = await response.json()
 
       toast({
         title: "Registration Successful",
