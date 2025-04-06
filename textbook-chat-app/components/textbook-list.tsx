@@ -29,37 +29,20 @@ export default function TextbookList() {
         // const data = await response.json();
 
         // Mock data
-        const mockData: Textbook[] = [
-          {
-            id: "1",
-            title: "Introduction to Computer Science",
-            author: "John Smith",
-            uploadDate: new Date(2023, 5, 15),
-            pages: 342,
-            thumbnail: "/physics.jpeg?height=100&width=80",
-          },
-          {
-            id: "2",
-            title: "Advanced Mathematics",
-            author: "Jane Doe",
-            uploadDate: new Date(2023, 6, 22),
-            pages: 512,
-            thumbnail: "/placeholder.svg?height=100&width=80",
-          },
-          {
-            id: "3",
-            title: "Physics Fundamentals",
-            author: "Robert Johnson",
-            uploadDate: new Date(2023, 7, 10),
-            pages: 278,
-            thumbnail: "/placeholder.svg?height=100&width=80",
-          },
-        ]
+        const response = await fetch("/api/textbooks", { cache: "no-store" }) // optional: force fetch
+        const data = await response.json()
 
-        setTimeout(() => {
-          setTextbooks(mockData)
-          setIsLoading(false)
-        }, 1000)
+        // Convert uploadDate string to Date object
+        const textbooksWithDate = data.map((book: any) => ({
+          ...book,
+          uploadDate: new Date(book.uploadDate),
+        }))
+
+        setTextbooks(textbooksWithDate)
+        setIsLoading(false)
+
+
+        
       } catch (error) {
         console.error("Error fetching textbooks:", error)
         setIsLoading(false)
