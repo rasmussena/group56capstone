@@ -12,6 +12,9 @@ from backend.redis_client import redis_client
 from backend.routes.auth import get_user_by_id
 from backend.routes.auth import router as auth_router
 
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 
 # Create FastAPI app
@@ -138,14 +141,28 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_textbooks(message: ChatMessage, current_user: Optional[User] = Depends(get_current_active_user)):
-    """
-    Processes a chat message and returns a response.
-    Works for both authenticated and unauthenticated users.
-    Only saves chat history for authenticated users.
-    """
-    # Simple response for testing
-    response_text = f"You asked: {message.message}\nThis is a response from the backend."
+async def chat_with_textbooks(
+    message: ChatMessage, current_user: Optional[User] = Depends(get_current_active_user)
+):
+    from openai import OpenAI
+    import os
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # This works because .env is loaded
+    print("KEY:", os.getenv("OPENAI_API_KEY"))
+
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that knows about textbooks."},
+                {"role": "user", "content": message.message},
+            ],
+        )
+        reply = response.choices[0].message.content
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+
     saved = current_user is not None
     
     if saved:
@@ -157,14 +174,13 @@ async def chat_with_textbooks(message: ChatMessage, current_user: Optional[User]
         }
         assistant_entry = {
             "role": "assistant",
-            "content": response_text,
+            "content": reply,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         await redis_client.rpush(redis_key, json.dumps(user_entry))
         await redis_client.rpush(redis_key, json.dumps(assistant_entry))
-        
-    return {"response": response_text, "saved": saved}
+    return {"response": reply, "saved": saved}
 
 
 @app.get("/chat/history")

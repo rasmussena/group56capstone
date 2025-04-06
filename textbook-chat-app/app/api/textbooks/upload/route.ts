@@ -1,27 +1,43 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { writeFile } from "fs/promises"
+import path from "path"
+import { v4 as uuidv4 } from "uuid"
+import { mkdir } from "fs/promises"
+import { existsSync } from "fs"
 
 export async function POST(req: NextRequest) {
   try {
-    // In a real application, you would:
-    // 1. Parse the FormData from the request
-    // 2. Save the file to a storage service (e.g., AWS S3)
-    // 3. Process the textbook (e.g., extract text, create embeddings)
-    // 4. Save metadata to your database
+    const formData = await req.formData()
+    const file = formData.get("file") as File
 
-    // Simulate processing time
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    if (!file || file.type !== "application/pdf") {
+      return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 })
+    }
 
-    // Mock response
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+
+    const filename = `${uuidv4()}.pdf`
+    const uploadPath = path.join(process.cwd(), "public", "uploads", filename)
+
+    if (!existsSync(path.join(process.cwd(), "public", "uploads"))) {
+      await mkdir(path.join(process.cwd(), "public", "uploads"), { recursive: true })
+    }
+
+    // Ensure the `public/uploads` folder exists
+    await writeFile(uploadPath, buffer)
+
     return NextResponse.json({
       success: true,
       message: "Textbook uploaded successfully",
       textbook: {
-        id: Math.random().toString(36).substring(7),
-        title: "Uploaded Textbook",
-        author: "Author Name",
+        id: uuidv4(),
+        title: file.name,
+        author: "Unknown", // you could parse this later
         uploadDate: new Date(),
-        pages: 300,
+        pages: 300, // placeholder
         thumbnail: "/placeholder.svg?height=100&width=80",
+        fileUrl: `/uploads/${filename}`,
       },
     })
   } catch (error) {
@@ -29,4 +45,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to upload textbook" }, { status: 500 })
   }
 }
+
 

@@ -23,6 +23,23 @@ npm run dev
 This will start the Next.js server, typically on [http://localhost:3000](http://localhost:3000)
 
 
+## Redis Setup
+Enable Redis persistence
+Make sure in your redis.conf:
+
+# Get to redis.conf
+```shellscript
+nano /usr/local/etc/redis.conf
+```
+I then exit without changing anything and follow the link to edit and find in the document the following changes
+
+# For AOF (recommended for chat apps)
+```shellscript
+appendonly yes
+appendfsync everysec
+```
+
+
 
 
 ## Backend (FastAPI) Setup
