@@ -1,37 +1,28 @@
-import { NextResponse } from "next/server"
+import { readFile } from "fs/promises"
+import { existsSync } from "fs"
+import path from "path"
+import { type NextRequest, NextResponse } from "next/server"
 
-// Mock database for textbooks
-const textbooks = [
-  {
-    id: "1",
-    title: "Physics",
-    author: "PAUL PETER URONE, ROGER HINRICHS",
-    uploadDate: new Date(2023, 5, 15),
-    pages: 850,
-    thumbnail: "/physics.jpeg?height=100&width=80",
-  },
-  {
-    id: "2",
-    title: "Advanced Mathematics",
-    author: "Jane Doe",
-    uploadDate: new Date(2023, 6, 22),
-    pages: 512,
-    thumbnail: "/placeholder.svg?height=100&width=80",
-  },
-  {
-    id: "3",
-    title: "Physics Fundamentals",
-    author: "Robert Johnson",
-    uploadDate: new Date(2023, 7, 10),
-    pages: 278,
-    thumbnail: "/placeholder.svg?height=100&width=80",
-  },
-]
+const METADATA_PATH = path.join(process.cwd(), "data", "books.json")
 
-export async function GET() {
-  // Simulate database delay
-  await new Promise((resolve) => setTimeout(resolve, 500))
+export async function GET(req: NextRequest) {
+  try {
+    if (!existsSync(METADATA_PATH)) {
+      return NextResponse.json([]) // no books yet
+    }
 
-  return NextResponse.json(textbooks)
+    const raw = await readFile(METADATA_PATH, "utf-8")
+    const books = JSON.parse(raw)
+
+    // Optional: convert uploadDate to string format
+    const textbooks = books.map((book: any) => ({
+      ...book,
+      uploadDate: new Date(book.uploadDate),
+    }))
+
+    return NextResponse.json(textbooks)
+  } catch (error) {
+    console.error("Failed to load books metadata:", error)
+    return NextResponse.json([], { status: 200 })
+  }
 }
-

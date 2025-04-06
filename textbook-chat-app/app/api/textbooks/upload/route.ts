@@ -1,14 +1,29 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { writeFile } from "fs/promises"
+import { writeFile, mkdir, readFile } from "fs/promises"
+import { existsSync } from "fs"
 import path from "path"
 import { v4 as uuidv4 } from "uuid"
-import { mkdir } from "fs/promises"
-import { existsSync } from "fs"
+
+const METADATA_PATH = path.join(process.cwd(), "data", "books.json")
+
+async function saveBookMetadata(newBook: any) {
+  let books = []
+
+  if (existsSync(METADATA_PATH)) {
+    const raw = await readFile(METADATA_PATH, "utf-8")
+    books = JSON.parse(raw)
+  }
+
+  books.push(newBook)
+  await writeFile(METADATA_PATH, JSON.stringify(books, null, 2))
+}
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get("file") as File
+    const title = formData.get("title")?.toString() || file.name
+    const author = formData.get("author")?.toString() || "Unknown"
 
     if (!file || file.type !== "application/pdf") {
       return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 })
@@ -24,26 +39,29 @@ export async function POST(req: NextRequest) {
       await mkdir(path.join(process.cwd(), "public", "uploads"), { recursive: true })
     }
 
-    // Ensure the `public/uploads` folder exists
     await writeFile(uploadPath, buffer)
+
+    // ✅ RIGHT HERE — build textbook metadata
+    const textbook = {
+      id: uuidv4(),
+      title,
+      author,
+      uploadDate: new Date(),
+      pages: 300,
+      thumbnail: "/placeholder.svg?height=100&width=80",
+      fileUrl: `/uploads/${filename}`,
+    }
+
+    // ✅ Save it to books.json
+    await saveBookMetadata(textbook)
 
     return NextResponse.json({
       success: true,
       message: "Textbook uploaded successfully",
-      textbook: {
-        id: uuidv4(),
-        title: file.name,
-        author: "Unknown", // you could parse this later
-        uploadDate: new Date(),
-        pages: 300, // placeholder
-        thumbnail: "/placeholder.svg?height=100&width=80",
-        fileUrl: `/uploads/${filename}`,
-      },
+      textbook,
     })
   } catch (error) {
     console.error("Error uploading textbook:", error)
     return NextResponse.json({ error: "Failed to upload textbook" }, { status: 500 })
   }
 }
-
-
