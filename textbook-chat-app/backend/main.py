@@ -12,9 +12,20 @@ from backend.redis_client import redis_client
 from backend.routes.auth import get_user_by_id
 from backend.routes.auth import router as auth_router
 
+from openai import OpenAI
+import os
+
+from langchain_openai import ChatOpenAI
+
+import backend.retriever
+
+from backend.graph import build_graph
+
 from dotenv import load_dotenv
 from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
+
+retriever = backend.retriever.create_retriever("data/Physics-WEB_Sab7RrQ.pdf", "Physics")
 
 
 # Create FastAPI app
@@ -144,24 +155,22 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 async def chat_with_textbooks(
     message: ChatMessage, current_user: Optional[User] = Depends(get_current_active_user)
 ):
-    from openai import OpenAI
-    import os
+    
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # This works because .env is loaded
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, streaming=True)  # This works because .env is loaded
+    graph = build_graph(llm, retriever)
     print("KEY:", os.getenv("OPENAI_API_KEY"))
 
+    if message.message:
+            reply = ""
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that knows about textbooks."},
-                {"role": "user", "content": message.message},
-            ],
-        )
-        reply = response.choices[0].message.content
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+            # Process LLM response before streaming
+            for event in graph.stream(
+                {"messages": [("user", message.message)]},
+                {"configurable": {"thread_id": 123}}
+            ):
+                for value in event.values():
+                    reply = value["messages"][-1].content
 
     saved = current_user is not None
     
