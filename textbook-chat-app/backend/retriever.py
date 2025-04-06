@@ -6,6 +6,7 @@ from langchain_openai import OpenAIEmbeddings, OpenAI
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import DocumentCompressorPipeline, LLMChainFilter
 from langchain_core.documents import Document
+from langchain.tools.retriever import create_retriever_tool
 from langchain_chroma import Chroma
 import chromadb
 
@@ -138,4 +139,16 @@ def create_retriever(textbook_path, textbook_name):
     print("Retriever initialized")
 
     return retriever
-    
+
+def create_retriever_tool(textbook_path, textbook_name):
+    """
+    This tool generates relevant documents from an OpenStax Textbook
+    """
+    retriever = create_retriever(textbook_path, textbook_name)
+
+    retriever_tool = create_retriever_tool(
+        retriever,
+        "retrieve_textbook_content",
+        "Search and return information from textbook."
+    )
+    return retriever_tool
