@@ -21,7 +21,8 @@ Here's a step-by-step guide to get both the frontend and backend running:
 
 First, use command
 
-```cd textbook-chat-app
+```
+cd textbook-chat-app
 ```
 
 This will lead you to the correct directory.
@@ -54,7 +55,8 @@ For instructions on installing Redis in Windows 11 view this article: https://re
 ## Backend (FastAPI) Setup
 In a new terminal, use the 
 
-```cd textbook-chat-app
+```
+cd textbook-chat-app
 ```
 
 Command again.
@@ -75,7 +77,8 @@ venv\Scripts\activate
 2. **Install dependencies**:
 
 Use command 
-``` cd backend
+``` 
+cd backend
 ```
 
 Then, install python dependencies using command
@@ -85,7 +88,8 @@ pip install -r requirements.txt
 ```
 
 Finally, return to the previous directory using command
-```cd ..
+```
+cd ..
 ```
 
 3. **Start the FastAPI server**:
