@@ -16,6 +16,8 @@ from openai import OpenAI
 import os
 
 from langchain_openai import ChatOpenAI
+from langchain_community.chat_message_histories import RedisChatMessageHistory
+from langchain_core.messages import AIMessage, HumanMessage
 
 import backend.retriever
 
@@ -153,70 +155,67 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_textbooks(
-    message: ChatMessage, current_user: Optional[User] = Depends(get_current_active_user)
+    message: ChatMessage,
+    current_user: Optional[User] = Depends(get_current_active_user)
 ):
-    
+    if not message.message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    llm = ChatOpenAI(model="gpt-4o", temperature=0, streaming=True)  # This works because .env is loaded
+    session_id = current_user.id if current_user else "anonymous"
+
+    history = RedisChatMessageHistory(
+        session_id=session_id,
+        url="redis://localhost:6379"
+    )
+    previous_messages = history.messages if history.messages else []
+
+    previous_messages.append(HumanMessage(content=message.message))
+
+    llm = ChatOpenAI(model="gpt-4o", temperature=0, streaming=True)
     graph = build_graph(llm, retriever)
-    print("KEY:", os.getenv("OPENAI_API_KEY"))
 
-    if message.message:
-            reply = ""
-
-            # Process LLM response before streaming
-            for event in graph.stream(
-                {"messages": [("user", message.message)]},
-                {"configurable": {"thread_id": 123}}
-            ):
-                for value in event.values():
-                    reply = value["messages"][-1].content
+    reply = ""
+    for event in graph.stream(
+        {"messages": previous_messages},
+        {"configurable": {"thread_id": session_id}}
+    ):
+        for value in event.values():
+            reply = value["messages"][-1].content
 
     saved = current_user is not None
-    
     if saved:
-        redis_key = f"chat_history:{current_user.id}"
-        user_entry = {
-            "role": "user",
-            "content": message.message,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        assistant_entry = {
-            "role": "assistant",
-            "content": reply,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+        history.add_user_message(message.message)
+        history.add_ai_message(reply)
 
-        await redis_client.rpush(redis_key, json.dumps(user_entry))
-        await redis_client.rpush(redis_key, json.dumps(assistant_entry))
     return {"response": reply, "saved": saved}
 
 
 @app.get("/chat/history")
 async def get_chat_history(current_user: User = Depends(get_current_active_user)):
-    """
-    Returns the chat history for the authenticated user.
-    Requires authentication.
-    """
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required to access chat history",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    redis_key = f"chat_history:{current_user.id}"
 
     try:
-        raw_messages = await redis_client.lrange(redis_key, 0, -1)
-        chat_history = [json.loads(msg) for msg in raw_messages]
-        return chat_history
+        history = RedisChatMessageHistory(
+            session_id=current_user.id,
+            url="redis://localhost:6379",
+        )
+        chat_history = history.messages  # List of HumanMessage / AIMessage objects
+        return [
+            {
+                "role": "user" if isinstance(m, HumanMessage) else "assistant",
+                "content": m.content
+            } for m in chat_history
+        ]
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving chat history: {str(e)}",
         )
-
 
 
 # Run the application

@@ -46,6 +46,7 @@ importlib_resources==6.5.2
 jiter==0.9.0
 langchain
 langchain-chroma
+langchain-redis
 langchain_community
 langchain_core
 langchain_openai

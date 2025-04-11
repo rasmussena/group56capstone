@@ -47,10 +47,13 @@ This will start the Next.js server, typically on [http://localhost:3000](http://
 
 
 ## Redis Setup
-Download Redis Software at this link: https://redis.io/downloads/.
+Download docker at this link: https://docs.docker.com/get-started/get-docker/
 
-For instructions on installing Redis in Windows 11 view this article: https://redis.io/blog/install-redis-windows-11/
+Then, run this command to start up a persistent Redis Image:
 
+```
+docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
+```
 
 ## Backend (FastAPI) Setup
 In a new terminal, use the 
