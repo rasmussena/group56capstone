@@ -30,7 +30,7 @@ jobs:
             git pull origin main
 
             # Set up Node.js frontend
-            npm install
+            npm install --legacy-peer-deps
             npm run dev
 
             # Go to backend
