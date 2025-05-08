@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Header
+from fastapi import FastAPI, Depends, HTTPException, status, Header, Query
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ import jwt
 import json
 import random
 import re
+import logging
 
 from backend.redis_client import redis_client
 
@@ -31,6 +33,11 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 retriever = backend.retriever.create_retriever("data/Physics-WEB_Sab7RrQ.pdf", "Physics")
 
+PDF_DIR = "./public"
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(title="TextbookAI API")
@@ -103,6 +110,16 @@ class UserProgress(BaseModel):
     topics_mastered: List[str] = []
     level: int = 1
     xp: int = 0
+
+class Chapter(BaseModel):
+    id: int
+    title: str
+    file: str
+
+class TextbookInfo(BaseModel):
+    id: str
+    title: str
+    chapters: List[Chapter]
 
 # OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
@@ -428,6 +445,146 @@ def update_user_progress(user_id: str, topic: str, is_correct: bool):
     except Exception as e:
         print(f"Error updating progress: {e}")
 
+@app.get("/api/pdf/{textbook}/{chapter}")
+async def get_pdf(textbook: str, chapter: int):
+    """Serve a PDF file for a specific textbook chapter."""
+    # Construct the file path
+    file_path = os.path.join(PDF_DIR, textbook, f"chapter{chapter}.pdf")
+    
+    logger.info(f"Attempting to serve PDF: {file_path}")
+    
+    # Check if the file exists
+    if not os.path.isfile(file_path):
+        logger.error(f"PDF file not found: {file_path}")
+        raise HTTPException(status_code=404, detail=f"PDF file not found: {file_path}")
+    
+    # Return the file
+    return FileResponse(
+        file_path, 
+        media_type="application/pdf",
+        filename=f"{textbook}_chapter{chapter}.pdf"
+    )
+
+@app.get("/api/chapters/{textbook}", response_model=TextbookInfo)
+async def get_chapters(textbook: str, title: Optional[str] = Query(None)):
+    """Get available chapters for a textbook."""
+    textbook_dir = os.path.join(PDF_DIR, textbook)
+    
+    logger.info(f"Looking for chapters in: {textbook_dir}")
+    
+    # Check if the directory exists
+    if not os.path.isdir(textbook_dir):
+        logger.error(f"Textbook directory not found: {textbook_dir}")
+        raise HTTPException(status_code=404, detail=f"Textbook not found: {textbook}")
+    
+    # Find all chapter PDFs
+    chapters = []
+    try:
+        for file in os.listdir(textbook_dir):
+            if file.startswith("chapter") and file.endswith(".pdf"):
+                # Extract chapter number and create chapter object
+                try:
+                    chapter_num = int(file.replace("chapter", "").replace(".pdf", ""))
+                    chapter_title = f"Chapter {chapter_num}"
+                    
+                    # You could read the PDF to extract actual titles if needed
+                    if chapter_num == 1:
+                        chapter_title = "Introduction"
+                    elif chapter_num == 2:
+                        chapter_title = "Basic Concepts"
+                    elif chapter_num == 3:
+                        chapter_title = "Advanced Topics"
+                    elif chapter_num == 4:
+                        chapter_title = "Case Studies"
+                    elif chapter_num == 5:
+                        chapter_title = "Practical Applications"
+                    elif chapter_num == 6:
+                        chapter_title = "Future Directions"
+                    
+                    chapters.append({
+                        "id": chapter_num,
+                        "title": chapter_title,
+                        "file": f"/api/pdf/{textbook}/{chapter_num}"
+                    })
+                except ValueError:
+                    # Skip files that don't match the expected pattern
+                    logger.warning(f"Skipping file with unexpected format: {file}")
+                    continue
+    except Exception as e:
+        logger.error(f"Error reading directory {textbook_dir}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error reading textbook directory: {str(e)}")
+    
+    # Sort chapters by ID
+    chapters.sort(key=lambda x: x["id"])
+    
+    # Use provided title or default
+    textbook_title = title or f"{textbook} Textbook"
+    
+    return {
+        "id": textbook,
+        "title": textbook_title,
+        "chapters": chapters
+    }
+
+@app.get("/api/textbooks", response_model=List[TextbookInfo])
+async def get_textbooks():
+    """Get all available textbooks."""
+    textbooks = []
+    
+    try:
+        # List all directories in the PDF_DIR
+        for item in os.listdir(PDF_DIR):
+            dir_path = os.path.join(PDF_DIR, item)
+            if os.path.isdir(dir_path):
+                # Check if directory contains PDF files
+                has_pdfs = any(file.endswith('.pdf') for file in os.listdir(dir_path))
+                if has_pdfs:
+                    # Get chapters for this textbook
+                    try:
+                        textbook_info = await get_chapters(item, f"{item} Textbook")
+                        textbooks.append(textbook_info)
+                    except HTTPException:
+                        # Skip textbooks that cause errors
+                        continue
+    except Exception as e:
+        logger.error(f"Error listing textbooks: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing textbooks: {str(e)}")
+    
+    return textbooks
+
+# For debugging purposes
+@app.get("/api/debug/file-exists")
+async def check_file_exists(path: str):
+    """Check if a file exists (for debugging)."""
+    full_path = os.path.join(PDF_DIR, path)
+    exists = os.path.isfile(full_path)
+    return {
+        "path": full_path,
+        "exists": exists,
+        "is_readable": os.access(full_path, os.R_OK) if exists else False
+    }
+
+# For debugging purposes
+@app.get("/api/debug/list-dir")
+async def list_directory(path: str = ""):
+    """List contents of a directory (for debugging)."""
+    full_path = os.path.join(PDF_DIR, path)
+    if not os.path.isdir(full_path):
+        raise HTTPException(status_code=404, detail=f"Directory not found: {full_path}")
+    
+    items = []
+    for item in os.listdir(full_path):
+        item_path = os.path.join(full_path, item)
+        items.append({
+            "name": item,
+            "is_dir": os.path.isdir(item_path),
+            "size": os.path.getsize(item_path) if os.path.isfile(item_path) else None
+        })
+    
+    return {
+        "path": full_path,
+        "items": items
+    }
 
 # Run the application
 if __name__ == "__main__":

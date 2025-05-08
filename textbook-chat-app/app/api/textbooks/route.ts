@@ -1,28 +1,42 @@
-import { readFile } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 
-const METADATA_PATH = path.join(process.cwd(), "data", "books.json")
+// The FastAPI backend URL - update this to match your backend
+const BACKEND_URL = "http://localhost:8000"
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    if (!existsSync(METADATA_PATH)) {
-      return NextResponse.json([]) // no books yet
+    // Forward the request to the FastAPI backend
+    const response = await fetch(`${BACKEND_URL}/api/textbooks`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Backend responded with status: ${response.status}`)
     }
 
-    const raw = await readFile(METADATA_PATH, "utf-8")
-    const books = JSON.parse(raw)
-
-    // Optional: convert uploadDate to string format
-    const textbooks = books.map((book: any) => ({
-      ...book,
-      uploadDate: new Date(book.uploadDate),
-    }))
-
-    return NextResponse.json(textbooks)
+    const data = await response.json()
+    return NextResponse.json(data)
   } catch (error) {
-    console.error("Failed to load books metadata:", error)
-    return NextResponse.json([], { status: 200 })
+    console.error("Error fetching textbooks:", error)
+
+    // Return mock data as fallback
+    const mockTextbooks = [
+      {
+        id: "Physics",
+        title: "Physics Textbook",
+        chapters: [
+          { id: 1, title: "Introduction", file: "/api/pdf/Physics/1" },
+          { id: 2, title: "Basic Concepts", file: "/api/pdf/Physics/2" },
+          { id: 3, title: "Advanced Topics", file: "/api/pdf/Physics/3" },
+          { id: 4, title: "Case Studies", file: "/api/pdf/Physics/4" },
+          { id: 5, title: "Practical Applications", file: "/api/pdf/Physics/5" },
+        ],
+      },
+    ]
+
+    return NextResponse.json(mockTextbooks)
   }
 }

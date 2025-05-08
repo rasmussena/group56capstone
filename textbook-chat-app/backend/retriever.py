@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_openai import OpenAIEmbeddings, OpenAI
@@ -106,12 +107,17 @@ def create_retriever(textbook_path, textbook_name):
                 )
         print("Documents loaded")
 
-        # Remove redundant chapter PDFs
-        for i in range(1, bookmarks["chapter_num"]+1):
-            file_path = f"./data/chapter{i}.pdf"
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        print("Removed chapter PDFs")
+        target_dir = f"./data/{textbook_name}"
+        os.makedirs(target_dir, exist_ok=True)
+
+        # Move chapter PDFs to the new folder
+        for i in range(1, bookmarks["chapter_num"] + 1):
+            src_path = f"./data/chapter{i}.pdf"
+            dst_path = os.path.join(target_dir, f"chapter{i}.pdf")
+            if os.path.exists(src_path):
+                shutil.move(src_path, dst_path)
+
+        print(f"Moved chapter PDFs to {target_dir}")
 
         # Remove bookmarks file
         if os.path.exists(bookmark_path):
